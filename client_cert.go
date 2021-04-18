@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 )
 
 // readClientCert - helper function to read client certificate
@@ -19,6 +21,27 @@ func readClientCert(certPath, keyPath string) ([]tls.Certificate, error) {
 	return nil, nil
 }
 
+// readCaCert - helper function to read a client certificate from
+// pem formatted caCertPath and add it to the system cert pool
+func readCaCert(caCertPath string) (*x509.CertPool, error) {
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		return nil, err
+	}
+
+	caCertPool, _ := x509.SystemCertPool()
+	if err != nil {
+		return nil, err
+	}
+
+	ok := caCertPool.AppendCertsFromPEM(caCert)
+	if !ok {
+		return nil, err
+	}
+
+	return caCertPool, nil
+}
+
 // generateTLSConfig - helper function to generate a TLS configuration based on
 // config
 func generateTLSConfig(c config) (*tls.Config, error) {
@@ -26,6 +49,7 @@ func generateTLSConfig(c config) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// Disable gas warning, because InsecureSkipVerify may be set to true
 	// for the purpose of testing
 	/* #nosec */
@@ -33,5 +57,16 @@ func generateTLSConfig(c config) (*tls.Config, error) {
 		InsecureSkipVerify: c.insecure,
 		Certificates:       certs,
 	}
+
+	if c.caCertPath != "" {
+		caCertPool, err := readCaCert(c.caCertPath)
+		if err != nil {
+			return nil, err
+		} else {
+			tlsConfig.RootCAs = caCertPool
+			return tlsConfig, nil
+		}
+	}
+
 	return tlsConfig, nil
 }

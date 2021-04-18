@@ -35,6 +35,7 @@ type kingpinParser struct {
 	bodyFilePath      string
 	stream            bool
 	certPath          string
+	caCertPath        string
 	keyPath           string
 	rate              *nullableUint64
 	clientType        clientTyp
@@ -58,6 +59,7 @@ func newKingpinParser() argsParser {
 		bodyFilePath: "",
 		stream:       false,
 		certPath:     "",
+		caCertPath:   "",
 		keyPath:      "",
 		insecure:     false,
 		url:          "",
@@ -101,6 +103,9 @@ func newKingpinParser() argsParser {
 	app.Flag("cert", "Path to the client's TLS Certificate").
 		Default("").
 		StringVar(&kparser.certPath)
+	app.Flag("cacert", "Path to the client's TLS CA Certificate for trusting self-signed certificates").
+		Default("").
+		StringVar(&kparser.caCertPath)
 	app.Flag("key", "Path to the client's TLS Certificate Private Key").
 		Default("").
 		StringVar(&kparser.keyPath)
@@ -225,6 +230,7 @@ func (k *kingpinParser) parse(args []string) (config, error) {
 		stream:            k.stream,
 		keyPath:           k.keyPath,
 		certPath:          k.certPath,
+		caCertPath:        k.caCertPath,
 		printLatencies:    k.latencies,
 		insecure:          k.insecure,
 		disableKeepAlives: k.disableKeepAlives,
