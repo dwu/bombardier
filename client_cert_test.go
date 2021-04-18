@@ -39,3 +39,30 @@ func TestGenerateTLSConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateTLSConfigWithCaCert(t *testing.T) {
+	expectations := []struct {
+		caCertPath string
+		errIsNil   bool
+	}{
+		{
+			caCertPath: "testclient.cert",
+			errIsNil:   true,
+		},
+		{
+			caCertPath: "doesnotexist.pem",
+			errIsNil:   false,
+		},
+	}
+	for _, e := range expectations {
+		_, r := generateTLSConfig(
+			config{
+				url:        "https://doesnt.exist.com",
+				caCertPath: e.caCertPath,
+			},
+		)
+		if (r == nil) != e.errIsNil {
+			t.Error(e.caCertPath, r)
+		}
+	}
+}

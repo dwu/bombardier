@@ -228,6 +228,32 @@ func TestArgsParsing(t *testing.T) {
 			[][]string{
 				{
 					programName,
+					"--cacert", "testclient.cert",
+					"https://somehost.somedomain",
+				},
+				{
+					programName,
+					"--cacert=testclient.cert",
+					"https://somehost.somedomain",
+				},
+			},
+			config{
+				numConns:      defaultNumberOfConns,
+				timeout:       defaultTimeout,
+				headers:       new(headersList),
+				method:        "GET",
+				caCertPath:    "testclient.cert",
+				url:           "https://somehost.somedomain:443",
+				printIntro:    true,
+				printProgress: true,
+				printResult:   true,
+				format:        knownFormat("plain-text"),
+			},
+		},
+		{
+			[][]string{
+				{
+					programName,
 					"--method", "POST",
 					"--body", "reqbody",
 					"https://somehost.somedomain",
