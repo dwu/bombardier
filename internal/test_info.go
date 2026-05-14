@@ -2,6 +2,7 @@ package internal
 
 import (
 	"math"
+	"net/url"
 	"sort"
 	"time"
 )
@@ -27,7 +28,7 @@ type Spec struct {
 	TestDuration     time.Duration
 
 	Method string
-	URL    string
+	URL    *url.URL
 
 	Headers []Header
 
@@ -42,6 +43,11 @@ type Spec struct {
 	ClientType ClientType
 
 	Rate *uint64
+}
+
+// RequestURL returns URL as string.
+func (s Spec) RequestURL() string {
+	return s.URL.String()
 }
 
 // IsTimedTest tells if the test was limited by time.
@@ -264,7 +270,8 @@ func (r Results) RequestsStats(percentiles []float64) *RequestsStats {
 	})
 	stddev := 0.0
 	if count > 2 {
-		stddev = math.Sqrt(sumOfSquares / float64(count))
+		const besselCorrection = 1.0
+		stddev = math.Sqrt(sumOfSquares / (float64(count) - besselCorrection))
 	}
 	return &RequestsStats{
 		Mean:   mean,

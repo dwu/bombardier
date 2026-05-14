@@ -134,7 +134,7 @@ func newBombardier(c config) (*bombardier, error) {
 		disableKeepAlives: c.disableKeepAlives,
 
 		headers:      c.headers,
-		url:          c.url,
+		requestURL:   c.url,
 		method:       c.method,
 		body:         pbody,
 		bodProd:      bsp,
@@ -443,12 +443,12 @@ func (b *bombardier) disableOutput() {
 func main() {
 	cfg, err := parser.parse(os.Args)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error parsing the arguments:", err)
 		os.Exit(exitFailure)
 	}
 	bombardier, err := newBombardier(cfg)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error initializing bombardier:", err)
 		os.Exit(exitFailure)
 	}
 	c := make(chan os.Signal, 1)

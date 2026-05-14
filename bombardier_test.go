@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,8 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/valyala/fasthttp"
 )
 
 func TestBombardierShouldFireSpecifiedNumberOfRequests(t *testing.T) {
@@ -39,7 +36,7 @@ func testBombardierShouldFireSpecifiedNumberOfRequests(
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    noHeaders,
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -74,7 +71,7 @@ func testBombardierShouldFinish(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		duration:   &desiredTestDuration,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    noHeaders,
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -137,7 +134,7 @@ func testBombardierShouldSendHeaders(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    &requestHeaders,
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -183,7 +180,7 @@ func testBombardierHTTPCodeRecording(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -223,7 +220,7 @@ func testBombardierTimeoutRecoding(clientType clientTyp, t *testing.T) {
 	shortTimeout := 10 * time.Millisecond
 	s := httptest.NewServer(
 		http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-			time.Sleep(shortTimeout * 2)
+			time.Sleep(shortTimeout * 10)
 		}),
 	)
 	defer s.Close()
@@ -232,7 +229,7 @@ func testBombardierTimeoutRecoding(clientType clientTyp, t *testing.T) {
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
 		duration:   nil,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    shortTimeout,
 		method:     "GET",
@@ -270,7 +267,7 @@ func testBombardierThroughputRecording(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -304,7 +301,7 @@ func TestBombardierStatsPrinting(t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:       defaultNumberOfConns,
 		numReqs:        &numReqs,
-		url:            s.URL,
+		url:            ParseURLOrPanic(s.URL),
 		headers:        new(headersList),
 		timeout:        defaultTimeout,
 		method:         "GET",
@@ -339,7 +336,7 @@ func TestBombardierErrorIfFailToReadClientCert(t *testing.T) {
 	_, e := newBombardier(config{
 		numConns:       defaultNumberOfConns,
 		numReqs:        &numReqs,
-		url:            "http://localhost",
+		url:            ParseURLOrPanic("http://localhost"),
 		headers:        new(headersList),
 		timeout:        defaultTimeout,
 		method:         "GET",
@@ -365,68 +362,47 @@ func testBombardierClientCerts(clientType clientTyp, t *testing.T) {
 		return
 	}
 
-	x509Cert, err := x509.ParseCertificate(clientCert.Certificate[0])
+	clientX509Cert, err := x509.ParseCertificate(clientCert.Certificate[0])
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	server := fasthttp.Server{
-		DisableKeepalive: true,
-		Handler: func(ctx *fasthttp.RequestCtx) {
-			certs := ctx.TLSConnectionState().PeerCertificates
-			if numCerts := len(certs); numCerts != 1 {
-				t.Errorf("expected 1 cert, but got %v", numCerts)
-				ctx.Error("invalid number of certs", http.StatusBadRequest)
-				return
-			}
-
-			cert := certs[0]
-			if !cert.Equal(x509Cert) {
-				t.Error("certificates don't match")
-				ctx.Error("wrong cert", http.StatusBadRequest)
-				return
-			}
-
-			ctx.Success("text/plain; charset=utf-8", []byte("OK"))
-		},
+	servertCert, err := tls.LoadX509KeyPair("testserver.cert", "testserver.key")
+	if err != nil {
+		t.Error(err)
+		return
 	}
 
 	tlsConfig := &tls.Config{
-		PreferServerCipherSuites: true,
+		ClientAuth:   tls.RequireAnyClientCert,
+		Certificates: []tls.Certificate{servertCert},
 	}
 
-	cert, err := tls.LoadX509KeyPair("testserver.cert", "testserver.key")
-	if err != nil {
-		t.Errorf("cannot load test TLS cert/key pair: %s", err)
-		return
-	}
-
-	tlsConfig.Certificates = []tls.Certificate{cert}
-	tlsConfig.BuildNameToCertificate()
-	tlsConfig.ClientAuth = tls.RequireAnyClientCert
-
-	ln, err := net.Listen("tcp", "localhost:8080")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	go func() {
-		serr := server.Serve(
-			tls.NewListener(ln, tlsConfig),
-		)
-
-		if serr != nil {
-			t.Error(err)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		certs := r.TLS.PeerCertificates
+		if numCerts := len(certs); numCerts != 1 {
+			t.Errorf("expected 1 cert, but got %v", numCerts)
+			rw.WriteHeader(http.StatusBadRequest)
+			return
 		}
-	}()
+		cert := certs[0]
+		if !cert.Equal(clientX509Cert) {
+			t.Error("certificates don't match")
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		rw.WriteHeader(http.StatusOK)
+	}))
 
-	numReqs := uint64(1)
+	server.TLS = tlsConfig
+	server.StartTLS()
+
+	singleRequest := uint64(1)
 	b, e := newBombardier(config{
 		numConns:       defaultNumberOfConns,
-		numReqs:        &numReqs,
-		url:            "https://localhost:8080/",
+		numReqs:        &singleRequest,
+		url:            ParseURLOrPanic(server.URL),
 		headers:        new(headersList),
 		timeout:        defaultTimeout,
 		method:         "GET",
@@ -446,16 +422,10 @@ func testBombardierClientCerts(clientType clientTyp, t *testing.T) {
 
 	b.bombard()
 	if b.req2xx != 1 {
-		t.Error("no requests succeeded")
+		t.Error("no 2xx responses, total =", b.reqs, ", 1xx/2xx/3xx/4xx/5xx =", b.req1xx, b.req2xx, b.req3xx, b.req4xx, b.req5xx)
 	}
 
-	err = ln.Close()
-	if err != nil {
-		t.Error(err)
-	}
-	// TODO(codesenberg): remove. Another hacky attempt to fix Travis CI's
-	// slowness
-	time.Sleep(100 * time.Millisecond)
+	server.Close()
 }
 
 func TestBombardierRateLimiting(t *testing.T) {
@@ -479,7 +449,7 @@ func testBombardierRateLimiting(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		duration:   &testDuration,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    defaultTimeout,
 		method:     "GET",
@@ -537,7 +507,7 @@ func testBombardierSendsBody(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &one,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    defaultTimeout,
 		method:     "POST",
@@ -586,7 +556,7 @@ func testBombardierSendsBodyFromFile(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:     defaultNumberOfConns,
 		numReqs:      &one,
-		url:          s.URL,
+		url:          ParseURLOrPanic(s.URL),
 		headers:      new(headersList),
 		timeout:      defaultTimeout,
 		method:       "POST",
@@ -606,7 +576,7 @@ func TestBombardierFileDoesntExist(t *testing.T) {
 	bodyPath := "/does/not/exist.forreal"
 	_, e := newBombardier(config{
 		numConns:     defaultNumberOfConns,
-		url:          "http://example.com",
+		url:          ParseURLOrPanic("http://example.com"),
 		headers:      new(headersList),
 		timeout:      defaultTimeout,
 		method:       "POST",
@@ -650,7 +620,7 @@ func testBombardierStreamsBody(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &one,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    new(headersList),
 		timeout:    defaultTimeout,
 		method:     "POST",
@@ -703,7 +673,7 @@ func testBombardierStreamsBodyFromFile(clientType clientTyp, t *testing.T) {
 	b, e := newBombardier(config{
 		numConns:     defaultNumberOfConns,
 		numReqs:      &one,
-		url:          s.URL,
+		url:          ParseURLOrPanic(s.URL),
 		headers:      new(headersList),
 		timeout:      defaultTimeout,
 		method:       "POST",
@@ -743,7 +713,7 @@ func testBombardierShouldSendCustomHostHeader(
 	b, e := newBombardier(config{
 		numConns:   defaultNumberOfConns,
 		numReqs:    &numReqs,
-		url:        s.URL,
+		url:        ParseURLOrPanic(s.URL),
 		headers:    &headers,
 		timeout:    defaultTimeout,
 		method:     "GET",

@@ -1,0 +1,32 @@
+version: v1.0
+name: codesenberg/bombardier
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu2004
+blocks:
+  - name: Test
+    task:
+      prologue:
+        commands:
+          - checkout
+          - go install gotest.tools/gotestsum@latest
+      jobs:
+        - name: Test go 1.21
+          commands:
+            - sem-version go 1.21
+            - gotestsum --junitfile report.xml ./...
+        - name: Test go 1.22
+          commands:
+            - sem-version go 1.22
+            - gotestsum --junitfile report.xml ./...
+      epilogue:
+        always:
+          commands:
+            - '[[ -f report.xml ]] && test-results publish report.xml'
+after_pipeline:
+  task:
+    jobs:
+      - name: Publish test results
+        commands:
+          - test-results gen-pipeline-report
